@@ -13,7 +13,7 @@ class ChebGibbsNet(nn.Module):
         self.lin2 = nn.Linear(in_features=args.num_hid, out_features=dataset.num_classes)
         self.prop = layers.ChebGibbs(K=args.order, gibbs_type=args.gibbs_type, 
                                      mu=args.mu, homophily=homophily)
-        self.silu = nn.SiLU()
+        self.gelu = nn.GELU()
         self.dropout_pre = nn.Dropout(p=args.droprate_pre)
         self.dropout_in = nn.Dropout(p=args.droprate_in)
         self.dropout_suf = nn.Dropout(p=args.droprate_suf)
@@ -24,10 +24,10 @@ class ChebGibbsNet(nn.Module):
 
         x = self.dropout_pre(x)
         x = self.lin1(x)
-        x = self.silu(x)
+        x = self.gelu(x)
         x = self.dropout_in(x)
         x = self.lin2(x)
-        x = self.silu(x)
+        x = self.gelu(x)
         x = self.dropout_suf(x)
         x = self.prop(x, edge_index, edge_weight)
         x = self.log_softmax(x)

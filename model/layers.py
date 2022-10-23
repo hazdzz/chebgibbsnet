@@ -6,7 +6,7 @@ import torch.nn.init as init
 
 from typing import Optional, Tuple
 from torch import Tensor
-from torch_scatter import scatter_add
+from torch_scatter import scatter, scatter_add
 from torch_sparse import SparseTensor
 from torch_sparse import matmul, matmul, mul, fill_diag
 from torch_sparse import sum as sparsesum
@@ -90,8 +90,6 @@ class ChebGibbs(MessagePassing):
         self.mu = mu
         self.homophily = homophily
         self.cheb_coef = nn.Parameter(data=torch.empty(K+1), requires_grad=True)
-        # self.cheb_node = torch.ones(K+1, K+1)
-        # self.target_node = nn.Parameter(data=torch.empty(K+1), requires_grad=True)
         self.gibbs_damp = torch.ones(K+1)
         self.improved = improved
         self.cached = cached
@@ -106,12 +104,6 @@ class ChebGibbs(MessagePassing):
 
     def reset_parameters(self) -> None:
         init.ones_(self.cheb_coef)
-
-        # for j in range(self.K+1):
-        #     self.cheb_node[1][j] = torch.tensor(np.cos(j * np.pi / self.K))
-        # for k in range(2, self.K+1):
-        #     self.cheb_node[k] = 2 * torch.mul(self.cheb_node[1], self.cheb_node[k-1]) - self.cheb_node[k-2]
-        # init.ones_(self.target_node)
 
         if self.gibbs_type == 'jackson':
             c = torch.tensor(torch.pi / (self.K+2))
@@ -166,27 +158,17 @@ class ChebGibbs(MessagePassing):
         out = Tx_0 * self.cheb_coef[0]
 
         Tx_1 = self.propagate(edge_index, x=x, edge_weight=edge_weight, size=None)
-        out = out + Tx_1 * self.gibbs_damp[1] * self.cheb_coef[1]
+        g2_1 = torch.sigmoid(scatter((torch.abs((Tx_1 * self.gibbs_damp[1] * self.cheb_coef[1])[edge_index[0]] - (Tx_1 * self.gibbs_damp[1] * self.cheb_coef[1])[edge_index[1]])).squeeze(-1),
+                                 edge_index[0], 0, dim_size=Tx_1.size(0), reduce='sum'))
+        out = out + Tx_1 * self.gibbs_damp[1] * self.cheb_coef[1] * g2_1
 
         for k in range(2, self.K+1):
             Tx_2 = self.propagate(edge_index, x=Tx_1, edge_weight=edge_weight, size=None)
             Tx_2 = 2. * Tx_2 - Tx_0
-            out = out + Tx_2 * self.gibbs_damp[k] * self.cheb_coef[k]
+            g2_2 = torch.sigmoid(scatter((torch.abs((Tx_2 * self.gibbs_damp[k] * self.cheb_coef[k])[edge_index[0]] - (Tx_2 * self.gibbs_damp[k] * self.cheb_coef[k])[edge_index[1]])).squeeze(-1),
+                                 edge_index[0], 0, dim_size=Tx_2.size(0), reduce='sum'))
+            out = out + Tx_2 * self.gibbs_damp[k] * self.cheb_coef[k] * g2_2
             Tx_0, Tx_1 = Tx_1, Tx_2
-
-        # self.cheb_node = self.cheb_node.to(x.device)
-
-        # Tx_0 = x
-        # out = Tx_0 * self.target_node.sum() / (self.K+1)
-
-        # Tx_1 = self.propagate(edge_index, x=x, edge_weight=edge_weight, size=None)
-        # out = out + Tx_1 * self.gibbs_damp[1] * torch.mul(self.target_node, self.cheb_node[1]).sum() * 2 / (self.K+1)
-
-        # for k in range(2, self.K+1):
-        #     Tx_2 = self.propagate(edge_index, x=Tx_1, edge_weight=edge_weight, size=None)
-        #     Tx_2 = 2. * Tx_2 - Tx_0
-        #     out = out + Tx_2 * self.gibbs_damp[k] * torch.mul(self.target_node, self.cheb_node[k]).sum() * 2 / (self.K+1)
-        #     Tx_0, Tx_1 = Tx_1, Tx_2
 
         return out
 
