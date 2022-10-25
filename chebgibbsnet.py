@@ -32,7 +32,7 @@ def get_parameters():
     parser = argparse.ArgumentParser(description='ChebGibbsNet')
     parser.add_argument('--enable_cuda', type=bool, default=True, help='enable or disable CUDA (default: True)')
     parser.add_argument('--model_name', type=str, default='chebgibbsnet')
-    parser.add_argument('--dataset_name', type=str, default='citeseer')
+    parser.add_argument('--dataset_name', type=str, default='cora')
     parser.add_argument('--order', type=int, default=10, help='polynomial order (default: 10)')
     parser.add_argument('--gibbs_type', type=str, default='jackson', choices=['none', 'jackson', 'lanczos'], help='Gibbs damping factor type (default: jackson)')
     parser.add_argument('--mu', type=float, default=3, help='mu for Lanczos (default: 3)')

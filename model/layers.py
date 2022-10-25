@@ -91,6 +91,7 @@ class ChebGibbs(MessagePassing):
         self.homophily = homophily
         self.cheb_coef = nn.Parameter(data=torch.empty(K+1), requires_grad=True)
         self.gibbs_damp = torch.ones(K+1)
+        self.tanh = nn.Tanh()
         self.improved = improved
         self.cached = cached
         self.add_self_loops = add_self_loops
@@ -154,20 +155,23 @@ class ChebGibbs(MessagePassing):
                 value = F.dropout(value, p=self.dropout)
                 edge_index = edge_index.set_value(value, layout='coo')
 
-        Tx_0 = x
-        out = Tx_0 * self.cheb_coef[0]
+        Tx_0 = self.tanh(x)
+        term_0 = Tx_0 * self.cheb_coef[0]
+        out = term_0
 
         Tx_1 = self.propagate(edge_index, x=x, edge_weight=edge_weight, size=None)
-        g2_1 = torch.sigmoid(scatter((torch.abs((Tx_1 * self.gibbs_damp[1] * self.cheb_coef[1])[edge_index[0]] - (Tx_1 * self.gibbs_damp[1] * self.cheb_coef[1])[edge_index[1]])).squeeze(-1),
-                                 edge_index[0], 0, dim_size=Tx_1.size(0), reduce='sum'))
-        out = out + Tx_1 * self.gibbs_damp[1] * self.cheb_coef[1] * g2_1
+        term_1 = self.tanh(Tx_1 * self.gibbs_damp[1] * self.cheb_coef[1])
+        g2_1 = torch.sigmoid(scatter((torch.abs(term_1[edge_index[0]] - term_1[edge_index[1]])).squeeze(-1),
+                                        edge_index[0], 0, dim_size=x.size(0), reduce='sum'))
+        out = out + term_1 * g2_1
 
         for k in range(2, self.K+1):
             Tx_2 = self.propagate(edge_index, x=Tx_1, edge_weight=edge_weight, size=None)
             Tx_2 = 2. * Tx_2 - Tx_0
-            g2_2 = torch.sigmoid(scatter((torch.abs((Tx_2 * self.gibbs_damp[k] * self.cheb_coef[k])[edge_index[0]] - (Tx_2 * self.gibbs_damp[k] * self.cheb_coef[k])[edge_index[1]])).squeeze(-1),
-                                 edge_index[0], 0, dim_size=Tx_2.size(0), reduce='sum'))
-            out = out + Tx_2 * self.gibbs_damp[k] * self.cheb_coef[k] * g2_2
+            term_2 = self.tanh(Tx_2 * self.gibbs_damp[k] * self.cheb_coef[k])
+            g2_2 = torch.sigmoid(scatter((torch.abs(term_2[edge_index[0]] - term_2[edge_index[1]])).squeeze(-1),
+                                            edge_index[0], 0, dim_size=x.size(0), reduce='sum'))
+            out = out + term_2 * g2_2
             Tx_0, Tx_1 = Tx_1, Tx_2
 
         return out
