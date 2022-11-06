@@ -34,7 +34,7 @@ def get_parameters():
     parser.add_argument('--model_name', type=str, default='chebgibbsnet')
     parser.add_argument('--dataset_name', type=str, default='cora')
     parser.add_argument('--order', type=int, default=10, help='polynomial order (default: 10)')
-    parser.add_argument('--gibbs_type', type=str, default='jackson', choices=['none', 'jackson', 'lanczos'], help='Gibbs damping factor type (default: jackson)')
+    parser.add_argument('--gibbs_type', type=str, default='zhang', choices=['none', 'jackson', 'lanczos', 'zhang'], help='Gibbs damping factor type (default: jackson)')
     parser.add_argument('--mu', type=float, default=3, help='mu for Lanczos (default: 3)')
     parser.add_argument('--droprate_pre', type=float, default=0, help='dropout rate for Dropout before MLP (default: 0)')
     parser.add_argument('--droprate_in', type=float, default=0, help='dropout rate for Dropout inside MLP (default: 0)')
@@ -45,7 +45,7 @@ def get_parameters():
     parser.add_argument('--weight_decay', type=float, default=0.0005, help='weight decay (default: 0.0005)')
     parser.add_argument('--epochs', type=int, default=1000, help='epochs (default: 1000)')
     parser.add_argument('--opt', type=str, default='adam', help='optimizer (default: adam)')
-    parser.add_argument('--patience', type=int, default=30, help='early stopping patience (default: 30)')
+    parser.add_argument('--patience', type=int, default=50, help='early stopping patience (default: 50)')
     args = parser.parse_args()
     print('Training configs: {}'.format(args))
 
@@ -114,7 +114,7 @@ def run(args, model, optimizer, data, loss, train_mask, val_mask, test_mask, sch
     loss_test, acc_test = test(model, data, loss, test_mask)
     acc_test_list.append(acc_test)
 
-    print(acc_test)
+    print(f'test acc: {acc_test * 100:.2f}%')
 
 def train(model, optimizer, data, loss, mask, scheduler):
     model.train()

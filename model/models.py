@@ -1,8 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.nn.init as init
-import torch_geometric.nn as pygnn
 
 from model import layers
 
@@ -19,14 +17,6 @@ class ChebGibbsNet(nn.Module):
         self.dropout_suf = nn.Dropout(p=args.droprate_suf)
         self.log_softmax = nn.LogSoftmax(dim=1)
 
-    #     self.reset_parameters()
-
-    # def reset_parameters(self):
-    #     init.orthogonal_(self.lin1.weight)
-    #     init.zeros_(self.lin1.bias)
-    #     init.orthogonal_(self.lin2.weight)
-    #     init.zeros_(self.lin2.bias)
-
     def forward(self, data):
         x, edge_index, edge_weight = data.x, data.edge_index, data.edge_weight
 
@@ -35,6 +25,7 @@ class ChebGibbsNet(nn.Module):
         x = self.tanh(x)
         x = self.dropout_in(x)
         x = self.lin2(x)
+        x = self.tanh(x)
         x = self.dropout_suf(x)
         x = self.prop(x, edge_index, edge_weight)
         x = self.log_softmax(x)

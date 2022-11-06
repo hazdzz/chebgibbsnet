@@ -1,8 +1,7 @@
-import numpy as np
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.nn.init as init
 
 from typing import Optional, Tuple
 from torch import Tensor
@@ -11,8 +10,8 @@ from torch_sparse import SparseTensor
 from torch_sparse import matmul, matmul, mul, fill_diag
 from torch_sparse import sum as sparsesum
 from torch_geometric.nn.conv import MessagePassing
-from torch_geometric.utils.num_nodes import maybe_num_nodes
 from torch_geometric.utils import add_remaining_self_loops, remove_self_loops
+from torch_geometric.utils.num_nodes import maybe_num_nodes
 from torch_geometric.typing import Adj,OptTensor, PairTensor
 
 @torch.jit._overload
@@ -82,16 +81,15 @@ class ChebGibbs(MessagePassing):
         kwargs.setdefault('aggr', 'add')
         super().__init__(**kwargs)
         assert K >= 0
-        assert gibbs_type in ['none', 'jackson', 'lanczos']
+        assert gibbs_type in ['none', 'jackson', 'lanczos', 'zhang']
         assert mu >= 1
 
         self.K = K
         self.gibbs_type = gibbs_type
         self.mu = mu
         self.homophily = homophily
-        self.cheb_coef = nn.Parameter(data=torch.empty(K+1), requires_grad=True)
+        # self.cheb_coef = nn.Parameter(torch.empty(K+1))
         self.gibbs_damp = torch.ones(K+1)
-        self.tanh = nn.Tanh()
         self.improved = improved
         self.cached = cached
         self.add_self_loops = add_self_loops
@@ -104,17 +102,20 @@ class ChebGibbs(MessagePassing):
         self.reset_parameters()
 
     def reset_parameters(self) -> None:
-        init.ones_(self.cheb_coef)
+        # init.ones_(self.cheb_coef)
 
         if self.gibbs_type == 'jackson':
             c = torch.tensor(torch.pi / (self.K+2))
-            for k in range(self.K+1):
+            for k in range(1, self.K+1):
                 self.gibbs_damp[k] = ((self.K+2-k) * torch.sin(c) * torch.cos(k * c) \
                                    + torch.cos(c) * torch.sin(k * c)) / ((self.K+2) * torch.sin(c))
         elif self.gibbs_type == 'lanczos':
-            for k in range(self.K+1):
+            for k in range(1, self.K+1):
                 self.gibbs_damp[k] = torch.sinc(torch.tensor(k / (self.K+1)))
             self.gibbs_damp = torch.pow(self.gibbs_damp, self.mu)
+        elif self.gibbs_type == 'zhang':
+            for k in range(2, self.K+1):
+                self.gibbs_damp[k] = self.gibbs_damp[k] * math.pow(2, 1-k)
 
     def forward(self, x: Tensor, edge_index: Adj, edge_weight: OptTensor = None) -> Tensor:
         self.gibbs_damp = self.gibbs_damp.to(x.device)
@@ -155,23 +156,16 @@ class ChebGibbs(MessagePassing):
                 value = F.dropout(value, p=self.dropout)
                 edge_index = edge_index.set_value(value, layout='coo')
 
-        Tx_0 = self.tanh(x)
-        term_0 = Tx_0 * self.cheb_coef[0]
-        out = term_0
+        Tx_0 = x
+        out = Tx_0
 
         Tx_1 = self.propagate(edge_index, x=x, edge_weight=edge_weight, size=None)
-        term_1 = self.tanh(Tx_1 * self.gibbs_damp[1] * self.cheb_coef[1])
-        g2_1 = torch.sigmoid(scatter((torch.abs(term_1[edge_index[0]] - term_1[edge_index[1]])).squeeze(-1),
-                                        edge_index[0], 0, dim_size=x.size(0), reduce='sum'))
-        out = out + term_1 * g2_1
+        out = out + Tx_1 * self.gibbs_damp[1]
 
         for k in range(2, self.K+1):
             Tx_2 = self.propagate(edge_index, x=Tx_1, edge_weight=edge_weight, size=None)
             Tx_2 = 2. * Tx_2 - Tx_0
-            term_2 = self.tanh(Tx_2 * self.gibbs_damp[k] * self.cheb_coef[k])
-            g2_2 = torch.sigmoid(scatter((torch.abs(term_2[edge_index[0]] - term_2[edge_index[1]])).squeeze(-1),
-                                            edge_index[0], 0, dim_size=x.size(0), reduce='sum'))
-            out = out + term_2 * g2_2
+            out = out + Tx_2 * self.gibbs_damp[k]
             Tx_0, Tx_1 = Tx_1, Tx_2
 
         return out
