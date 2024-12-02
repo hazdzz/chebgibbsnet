@@ -2,6 +2,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.nn.init as init
 
 from typing import Optional, Tuple
 from torch import Tensor
@@ -10,9 +11,10 @@ from torch_sparse import SparseTensor
 from torch_sparse import matmul, matmul, mul, fill_diag
 from torch_sparse import sum as sparsesum
 from torch_geometric.nn.conv import MessagePassing
-from torch_geometric.utils import add_remaining_self_loops, remove_self_loops
+from torch_geometric.utils import get_laplacian, add_remaining_self_loops, remove_self_loops
 from torch_geometric.utils.num_nodes import maybe_num_nodes
 from torch_geometric.typing import Adj,OptTensor, PairTensor
+
 
 @torch.jit._overload
 def gcn_norm(edge_index, edge_weight=None, num_nodes=None, improved=False,
@@ -70,26 +72,145 @@ def gcn_norm(edge_index, edge_weight=None, num_nodes=None, improved=False,
 
         return edge_index, deg_inv_sqrt[row] * edge_weight * deg_inv_sqrt[col]
 
-class ChebGibbs(MessagePassing):
+
+class ChebConv(MessagePassing):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        K: int,
+        normalization: Optional[str] = 'sym',
+        bias: bool = True,
+        **kwargs,
+    ) -> None:
+        kwargs.setdefault('aggr', 'add')
+        super().__init__(**kwargs)
+
+        assert K >= 0
+        assert normalization in [None, 'sym', 'rw'], 'Invalid normalization'
+
+        self.K = K
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.normalization = normalization
+        self.weight = nn.Parameter(torch.empty(out_channels, in_channels))
+        if bias:
+            self.bias = nn.Parameter(torch.empty(out_channels))
+        else:
+            self.register_parameter('bias', None)
+        self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        init.kaiming_uniform_(self.weight)
+        if self.bias is not None:
+            init.zeros_(self.bias)
+
+    def __norm__(
+        self,
+        edge_index: Tensor,
+        num_nodes: Optional[int],
+        edge_weight: OptTensor,
+        normalization: Optional[str],
+        lambda_max: OptTensor = None,
+        dtype: Optional[int] = None,
+        batch: OptTensor = None,
+    ):
+        edge_index, edge_weight = remove_self_loops(edge_index, edge_weight)
+        edge_index, edge_weight = get_laplacian(edge_index, edge_weight,
+                                                normalization, dtype,
+                                                num_nodes)
+        assert edge_weight is not None
+
+        if lambda_max is None:
+            lambda_max = torch.norm(edge_weight, p=2)
+        elif not isinstance(lambda_max, Tensor):
+            lambda_max = torch.tensor(lambda_max, dtype=dtype,
+                                      device=edge_index.device)
+        assert lambda_max is not None
+
+        if batch is not None and lambda_max.numel() > 1:
+            lambda_max = lambda_max[batch[edge_index[0]]]
+
+        edge_weight = (2.0 * edge_weight) / lambda_max
+        edge_weight.masked_fill_(torch.isinf(edge_weight), 0)
+        edge_weight.masked_fill_(torch.isnan(edge_weight), 0)
+
+        loop_mask = edge_index[0] == edge_index[1]
+        edge_weight[loop_mask] -= 1
+
+        return edge_index, edge_weight
+
+    def forward(
+        self,
+        x: Tensor,
+        edge_index: Tensor,
+        edge_weight: OptTensor = None,
+        batch: OptTensor = None,
+        lambda_max: OptTensor = None,
+    ) -> Tensor:
+
+        edge_index, norm = self.__norm__(
+            edge_index,
+            x.size(self.node_dim),
+            edge_weight,
+            self.normalization,
+            lambda_max,
+            dtype=x.dtype,
+            batch=batch,
+        )
+
+        Tx_0 = x
+        cheb = Tx_0
+
+        if self.K >= 1:
+            # propagate_type: (x: Tensor, norm: Tensor)
+            Tx_1 = self.propagate(edge_index, x=x, norm=norm)
+            cheb = cheb + Tx_1
+
+        if self.K >= 2:
+            for k in range(2, self.K + 1):
+                Tx_2 = self.propagate(edge_index, x=Tx_1, norm=norm)
+                Tx_2 = 2. * Tx_2 - Tx_0
+                cheb = cheb + Tx_2
+                Tx_0, Tx_1 = Tx_1, Tx_2
+
+        out = F.linear(cheb, self.weight, self.bias)
+
+        return out
+
+    def message(self, x_j: Tensor, norm: Tensor) -> Tensor:
+        return norm.view(-1, 1) * x_j
+
+    def __repr__(self) -> str:
+        return (f'{self.__class__.__name__}({self.in_channels}, '
+                f'{self.out_channels}, K={len(self.lins)}, '
+                f'normalization={self.normalization})')
+
+
+class ChebGibbsProp(MessagePassing):
     _cached_edge_index: Optional[Tuple[Tensor, Tensor]]
     _cached_adj_t: Optional[SparseTensor]
 
-    def __init__(self, K: int, gibbs_type: str, mu: int, 
-                 homophily: float, improved: bool = False, 
+    def __init__(self, K: int = 2, gibbs_type: str = 'jackson', 
+                 mu: int = 3, xi: float = 4.0, stigma: float = 0.5, heta: int = 2,
+                 homophily: float = 0.8, improved: bool = False, 
                  cached: bool = False, add_self_loops: bool = True, 
-                 normalize: bool = True, dropout: float = 0., **kwargs):
+                 normalize: bool = True, dropout: float = 0., **kwargs) -> None:
         kwargs.setdefault('aggr', 'add')
         super().__init__(**kwargs)
         assert K >= 0
-        assert gibbs_type in ['none', 'jackson', 'lanczos', 'zhang']
+        assert gibbs_type in ['none', 'dirichlet', 'fejer', 'jackson', 'lanczos', 'lorentz', 'vekic', 'wang']
         assert mu >= 1
 
         self.K = K
         self.gibbs_type = gibbs_type
         self.mu = mu
+        self.xi = xi
+        self.stigma = stigma
+        self.heta = heta
         self.homophily = homophily
-        # self.cheb_coef = nn.Parameter(torch.empty(K+1))
-        self.gibbs_damp = torch.ones(K+1)
+        self.cheb_coef = nn.Parameter(torch.empty(K + 1))
+        self.gibbs_damp = torch.ones(K + 1)
         self.improved = improved
         self.cached = cached
         self.add_self_loops = add_self_loops
@@ -102,9 +223,20 @@ class ChebGibbs(MessagePassing):
         self.reset_parameters()
 
     def reset_parameters(self) -> None:
-        # init.ones_(self.cheb_coef)
+        init.constant_(self.cheb_coef, 2 / (self.K + 1))
+        init.constant_(self.cheb_coef[0], 1 / (self.K + 1))
+        init.ones_(self.gibbs_damp)
 
+        if self.gibbs_type == 'fejer':
+            for k in range(1, self.K + 1):
+                self.gibbs_damp[k] = torch.tensor(1 - k / (self.K + 1))
         if self.gibbs_type == 'jackson':
+            # Weiße, A., Wellein, G., Alvermann, A., & Fehske, H. (2006). 
+            # The kernel polynomial method. 
+            # Reviews of Modern Physics, 78, 275–306.
+            # Weiße, A., & Fehske, H. (2008). Chebyshev Expansion Techniques. 
+            # In Computational Many-Particle Physics (pp. 545–577). 
+            # Springer Berlin Heidelberg.
             c = torch.tensor(torch.pi / (self.K+2))
             for k in range(1, self.K+1):
                 self.gibbs_damp[k] = ((self.K+2-k) * torch.sin(c) * torch.cos(k * c) \
@@ -113,9 +245,30 @@ class ChebGibbs(MessagePassing):
             for k in range(1, self.K+1):
                 self.gibbs_damp[k] = torch.sinc(torch.tensor(k / (self.K+1)))
             self.gibbs_damp = torch.pow(self.gibbs_damp, self.mu)
-        elif self.gibbs_type == 'zhang':
-            for k in range(2, self.K+1):
-                self.gibbs_damp[k] = self.gibbs_damp[k] * math.pow(2, 1-k)
+        elif self.gibbs_type == 'lorentz':
+            # Vijay, A., Kouri, D., & Hoffman, D. (2004). 
+            # Scattering and Bound States: 
+            # A Lorentzian Function-Based Spectral Filter Approach. 
+            # The Journal of Physical Chemistry A, 108(41), 8987-9003.
+            for k in range(1, self.K + 1):
+                self.gibbs_damp[k] = torch.sinh(self.xi * torch.tensor(1 - k / (self.K + 1))) / math.sinh(self.xi)
+        elif self.gibbs_type == 'vekic':
+            # M. Vekić, & S. R. White (1993). Smooth boundary 
+            # conditions for quantum lattice systems. 
+            # Physical Review Letters, 71, 4283–4286.
+            for k in range(1, self.K + 1):
+                self.gibbs_damp[k] = torch.tensor(k / (self.K + 1))
+                self.gibbs_damp[k] = 0.5 * (1 - torch.tanh((self.gibbs_damp[k] - 0.5) / \
+                                    (self.gibbs_damp[k] * (1 - self.gibbs_damp[k]))))
+        elif self.gibbs_type == 'wang':
+            # Wang, L.W. (1994). Calculating the density of 
+            # states and optical-absorption spectra of 
+            # large quantum systems by the plane-wave moments method. 
+            # Physical Review B, 49, 10154–10158.
+            for k in range(1, self.K + 1):
+                self.gibbs_damp[k] = torch.tensor(k / (self.stigma * (self.K + 1)))
+            self.gibbs_damp = -torch.pow(self.gibbs_damp, self.heta)
+            self.gibbs_damp = torch.exp(self.gibbs_damp)
 
     def forward(self, x: Tensor, edge_index: Adj, edge_weight: OptTensor = None) -> Tensor:
         self.gibbs_damp = self.gibbs_damp.to(x.device)
@@ -157,15 +310,15 @@ class ChebGibbs(MessagePassing):
                 edge_index = edge_index.set_value(value, layout='coo')
 
         Tx_0 = x
-        out = Tx_0
+        out = Tx_0 * self.cheb_coef[0]
 
         Tx_1 = self.propagate(edge_index, x=x, edge_weight=edge_weight, size=None)
-        out = out + Tx_1 * self.gibbs_damp[1]
+        out = out + Tx_1 * self.cheb_coef[1] * self.gibbs_damp[1]
 
         for k in range(2, self.K+1):
             Tx_2 = self.propagate(edge_index, x=Tx_1, edge_weight=edge_weight, size=None)
             Tx_2 = 2. * Tx_2 - Tx_0
-            out = out + Tx_2 * self.gibbs_damp[k]
+            out = out + Tx_2 * self.cheb_coef[k] * self.gibbs_damp[k]
             Tx_0, Tx_1 = Tx_1, Tx_2
 
         return out
