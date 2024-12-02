@@ -38,9 +38,9 @@ def get_parameters():
     parser.add_argument('--gibbs_type', type=str, default='jackson', choices=['none', 'dirichlet', \
                         'fejer', 'jackson', 'lanczos', 'lorentz', 'vekic', 'wang'], help='Gibbs damping factor type (default: jackson)')
     parser.add_argument('--mu', type=int, default=3, help='mu for Lanczos (default: 3)')
-    parser.add_argument('--xi', type=float, default=4.0, help='mu for Lorentz (default: 4.0)')
-    parser.add_argument('--stigma', type=float, default=0.5, help='mu for Vekic (default: 0.5)')
-    parser.add_argument('--heta', type=int, default=2, help='mu for Wang (default: 2)')
+    parser.add_argument('--xi', type=float, default=4.0, help='xi for Lorentz (default: 4.0)')
+    parser.add_argument('--stigma', type=float, default=0.5, help='stigma for Vekic (default: 0.5)')
+    parser.add_argument('--heta', type=int, default=2, help='heta for Wang (default: 2)')
     parser.add_argument('--act', type=str, default='smu', choices=['silu', 'gelu', 'mish', \
                         'tanhexp', 'sinsig', 'diracrelu', 'smu'], help='activation function (default: smu)')
     parser.add_argument('--droprate_pre', type=float, default=0, help='dropout rate for Dropout before MLP (default: 0)')
@@ -58,8 +58,6 @@ def get_parameters():
 
     # Running in Nvidia GPU (CUDA) or CPU
     if args.enable_cuda and torch.cuda.is_available():
-        # Set available CUDA devices
-        # This option is crucial for multiple GPUs
         device = torch.device('cuda')
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats()
