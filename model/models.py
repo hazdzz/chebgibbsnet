@@ -64,13 +64,13 @@ class GCN(nn.Module):
         self.dropout_suf = nn.Dropout(p=args.droprate_suf)
 
     def forward(self, data):
-        x = data.x
+        x, edge_index, edge_weight = data.x, data.edge_index, data.edge_weight
 
         x = self.dropout_pre(x)
-        x = self.gcnconv1(x)
+        x = self.gcnconv1(x, edge_index, edge_weight)
         x = self.relu(x)
         x = self.dropout_in(x)
-        x = self.gcnconv2(x)
+        x = self.gcnconv2(x, edge_index, edge_weight)
         x = self.dropout_suf(x)
 
 

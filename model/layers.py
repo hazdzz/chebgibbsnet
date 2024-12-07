@@ -312,14 +312,16 @@ class ChebGibbsProp(MessagePassing):
         Tx_0 = x
         out = Tx_0 * self.cheb_coef[0]
 
-        Tx_1 = self.propagate(edge_index, x=x, edge_weight=edge_weight, size=None)
-        out = out + Tx_1 * self.cheb_coef[1] * self.gibbs_damp[1]
+        if self.K >= 1:
+            Tx_1 = self.propagate(edge_index, x=x, edge_weight=edge_weight, size=None)
+            out = out + Tx_1 * self.cheb_coef[1] * self.gibbs_damp[1]
 
-        for k in range(2, self.K+1):
-            Tx_2 = self.propagate(edge_index, x=Tx_1, edge_weight=edge_weight, size=None)
-            Tx_2 = 2. * Tx_2 - Tx_0
-            out = out + Tx_2 * self.cheb_coef[k] * self.gibbs_damp[k]
-            Tx_0, Tx_1 = Tx_1, Tx_2
+        if self.K >= 2:
+            for k in range(2, self.K+1):
+                Tx_2 = self.propagate(edge_index, x=Tx_1, edge_weight=edge_weight, size=None)
+                Tx_2 = 2. * Tx_2 - Tx_0
+                out = out + Tx_2 * self.cheb_coef[k] * self.gibbs_damp[k]
+                Tx_0, Tx_1 = Tx_1, Tx_2
 
         return out
 
