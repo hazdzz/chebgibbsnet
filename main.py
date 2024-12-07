@@ -99,7 +99,7 @@ def prepare_model(args, device):
     es = early_stopping.EarlyStopping(delta=0.0, 
                                       patience=args.patience, 
                                       verbose=True, 
-                                      path="chebnet_" + args.gibbs_type + "_" + args.dataset_name + ".pt")
+                                      path="chebgibbsnet_" + args.gibbs_type + "_" + args.dataset_name + ".pt")
 
     if args.opt == 'adam': # default
         optimizer = optim.Adam(params=model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -152,7 +152,7 @@ def val(model, data, loss, mask):
 
 @torch.no_grad()
 def test(args, model, data, loss, mask):
-    model.load_state_dict(torch.load("chebnet_" + args.gibbs_type + "_" + args.dataset_name + ".pt"))
+    model.load_state_dict(torch.load("chebgibbsnet_" + args.gibbs_type + "_" + args.dataset_name + ".pt"))
     model.eval()
     out = model(data)
     loss_test = loss(out[mask], data.y[mask])
