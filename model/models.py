@@ -27,6 +27,8 @@ class MLP(nn.Module):
         x = self.linear2(x)
         x = self.dropout_suf(x)
 
+        return x
+
 
 class ChebNet(nn.Module):
     def __init__(self, dataset, args):
@@ -72,6 +74,8 @@ class GCN(nn.Module):
         x = self.dropout_in(x)
         x = self.gcnconv2(x, edge_index, edge_weight)
         x = self.dropout_suf(x)
+
+        return x
 
 
 class ChebGibbsNet(nn.Module):
