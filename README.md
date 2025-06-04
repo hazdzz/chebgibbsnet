@@ -3,8 +3,14 @@
 ## About
 The official PyTorch Geometric implementation for the paper *From ChebNet to ChebGibbsNet*.
 
-## Paper
-https://arxiv.org/abs/2412.01789
+## Citation
+```
+@misc{zhang2022chebgibbsnet,
+    author  = {Jie Zhang and Bo Hui and Po-wei Harn and Min-Te Sun and Wei-Shinn Ku},
+    title   = {From ChebNet to ChebGibbsNet},
+    year    = {2022}
+}
+```
 
 ## Requirements
 To install requirements:
