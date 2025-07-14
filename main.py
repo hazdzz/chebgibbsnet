@@ -38,11 +38,11 @@ def get_parameters():
     parser.add_argument('--enable_cuda', type=bool, default=True, help='enable or disable CUDA (default: True)')
     parser.add_argument('--model_name', type=str, default='chebgibbsnet', help='model name (default: \'chebgibbsnet\')')
     parser.add_argument('--dataset_name', type=str, default='film', 
-                        choices=['film', 'computers', 'photo', 
-                        'cornell', 'texas', 'wisconsin', 'chameleon', 'squirrel', 
-                        'roman-empire', 'amazon-ratings', 
-                        'minesweeper', 'tolokers', 'questions', 
-                        'cora_full', 'cora_ml', 'citeseer', 'dblp', 'pubmed', 
+                        choices=['film', 'computers', 'photo', \
+                        'cornell', 'texas', 'wisconsin', 'chameleon', 'squirrel', \
+                        'roman-empire', 'amazon-ratings', \
+                        'minesweeper', 'tolokers', 'questions', \
+                        'cora_full', 'cora_ml', 'citeseer', 'dblp', 'pubmed', \
                         'wikics'], help='dataset')
     parser.add_argument('--order', type=int, default=10, help='polynomial order (default: 10)')
     parser.add_argument('--gibbs_type', type=str, default='jackson', choices=['none', 'dirichlet', \
