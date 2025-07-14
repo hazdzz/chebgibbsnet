@@ -42,6 +42,8 @@ def data_loader(name):
         data = dataset[0]
     ### Directed Graphs
     elif name in ['cora_full', 'cora_ml', 'citeseer', 'dblp', 'pubmed']:
+        if name == 'cora_full':
+            name = 'cora'
         dataset = CitationFull(root='./data/', name=name, transform=T.NormalizeFeatures(), to_undirected=True)
         data = dataset[0]
     elif name == 'wikics':

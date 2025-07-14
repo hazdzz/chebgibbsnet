@@ -82,7 +82,7 @@ def prepare_data(args, device, split_idx):
     dataset, data = data_loader.data_loader(args.dataset_name)
     args.length = data.x.size(0)
 
-    if (hasattr(dataset, 'is_undirected')) and (not dataset.is_undirected()):
+    if (hasattr(dataset, 'is_undirected')) and (not dataset.is_undirected):
         if data.edge_weight is None:
             data.edge_index = to_undirected(edge_index=data.edge_index, reduce='max')
         else:
