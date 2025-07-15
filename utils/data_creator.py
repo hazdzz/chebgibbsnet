@@ -84,20 +84,6 @@ class Amazon(InMemoryDataset):
                          force_reload=force_reload)
         
         self.load(self.processed_paths[0])
-        
-        # Check if cached data has the same split seed after loading
-        try:
-            data = self.get(0)  # Use get() instead of [] to avoid transform
-            if hasattr(data, 'split_seed') and data.split_seed != self.split_seed:
-                print(f"Warning: Cached data was generated with seed {data.split_seed}, "
-                      f"but requested seed is {self.split_seed}. "
-                      f"Use force_reload=True to regenerate with new seed.")
-            elif hasattr(data, 'split_seed'):
-                print(f"Loading cached Amazon {self.name} dataset with splits (seed={data.split_seed})")
-            else:
-                print(f"Loading Amazon {self.name} dataset")
-        except:
-            print(f"Loading Amazon {self.name} dataset")
 
     @property
     def raw_dir(self) -> str:
@@ -347,20 +333,6 @@ class CitationFull(InMemoryDataset):
                          force_reload=force_reload)
         
         self.load(self.processed_paths[0])
-        
-        # Check if cached data has the same split seed after loading
-        try:
-            data = self.get(0)  # Use get() instead of [] to avoid transform
-            if hasattr(data, 'split_seed') and data.split_seed != self.split_seed:
-                print(f"Warning: Cached data was generated with seed {data.split_seed}, "
-                      f"but requested seed is {self.split_seed}. "
-                      f"Use force_reload=True to regenerate with new seed.")
-            elif hasattr(data, 'split_seed'):
-                print(f"Loading cached {self.name.capitalize()} dataset with splits (seed={data.split_seed})")
-            else:
-                print(f"Loading {self.name.capitalize()} dataset")
-        except:
-            print(f"Loading {self.name.capitalize()} dataset")
 
     @property
     def raw_dir(self) -> str:
