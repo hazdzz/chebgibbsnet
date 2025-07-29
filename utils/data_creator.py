@@ -1,12 +1,8 @@
 import os.path as osp
 import numpy as np
-import pickle
 import torch
-import torch_geometric.transforms as T
 
-from sklearn.model_selection import train_test_split
-from torch_geometric.data import Data, InMemoryDataset, download_url
-from torch_geometric.datasets import Amazon, CitationFull
+from torch_geometric.data import InMemoryDataset, download_url
 from torch_geometric.io import read_npz
 from typing import Callable, List, Optional
 
@@ -84,7 +80,7 @@ class Amazon(InMemoryDataset):
                          force_reload=force_reload)
         
         self.load(self.processed_paths[0])
-
+        
     @property
     def raw_dir(self) -> str:
         return osp.join(self.root, self.name.lower(), 'raw')
@@ -127,37 +123,33 @@ class Amazon(InMemoryDataset):
         Returns:
             tuple: (train_masks, val_masks, test_masks) each of shape [num_nodes, num_splits]
         """
-        # Set random seed for reproducibility
-        torch.manual_seed(seed)
-        np.random.seed(seed)
-        
-        train_masks = torch.zeros(num_nodes, num_splits, dtype=torch.bool)
-        val_masks = torch.zeros(num_nodes, num_splits, dtype=torch.bool)
-        test_masks = torch.zeros(num_nodes, num_splits, dtype=torch.bool)
-        
-        # Standard split ratios: 60% train, 20% val, 20% test
-        train_ratio = 0.6
-        val_ratio = 0.2
-        
-        for split_idx in range(num_splits):
-            # Create random permutation for this split with different seed per split
-            # This ensures different splits while maintaining reproducibility
-            torch.manual_seed(seed + split_idx)
-            perm = torch.randperm(num_nodes)
-            
-            train_end = int(train_ratio * num_nodes)
-            val_end = int((train_ratio + val_ratio) * num_nodes)
-            
-            train_idx = perm[:train_end]
-            val_idx = perm[train_end:val_end]
-            test_idx = perm[val_end:]
-            
-            train_masks[train_idx, split_idx] = True
-            val_masks[val_idx, split_idx] = True
-            test_masks[test_idx, split_idx] = True
-        
-        # Reset random state to avoid affecting other operations
-        torch.manual_seed(torch.initial_seed())
+        with torch.random.fork_rng():
+            torch.manual_seed(seed)
+
+            train_masks = torch.zeros(num_nodes, num_splits, dtype=torch.bool)
+            val_masks = torch.zeros(num_nodes, num_splits, dtype=torch.bool)
+            test_masks = torch.zeros(num_nodes, num_splits, dtype=torch.bool)
+
+            # Standard split ratios: 60% train, 20% val, 20% test
+            train_ratio = 0.6
+            val_ratio = 0.2
+
+            for split_idx in range(num_splits):
+                # Create random permutation for this split with different seed per split
+                # This ensures different splits while maintaining reproducibility
+                torch.manual_seed(seed + split_idx)
+                perm = torch.randperm(num_nodes)
+
+                train_end = int(train_ratio * num_nodes)
+                val_end = int((train_ratio + val_ratio) * num_nodes)
+
+                train_idx = perm[:train_end]
+                val_idx = perm[train_end:val_end]
+                test_idx = perm[val_end:]
+
+                train_masks[train_idx, split_idx] = True
+                val_masks[val_idx, split_idx] = True
+                test_masks[test_idx, split_idx] = True
             
         return train_masks, val_masks, test_masks
 
@@ -166,28 +158,23 @@ class Amazon(InMemoryDataset):
         if osp.exists(self.processed_paths[0]) and not self.force_reload:
             # File exists, no need to process again
             return
-            
+
         print(f"Generating new splits with seed {self.split_seed}...")
         
-        # Read the main data file
         data = read_npz(self.raw_paths[0], to_undirected=True)
-        
-        # Generate 10 random splits for cross-validation with fixed seed
+
         num_nodes = data.x.size(0)
-        train_masks, val_masks, test_masks = self._generate_splits(num_nodes, seed=self.split_seed)
-        
-        # Add the split masks to the data object
-        data.train_mask = train_masks
-        data.val_mask = val_masks
-        data.test_mask = test_masks
-        
-        # Store the seed used for generating splits in the data object
+        train_masks, val_masks, test_masks = self._generate_splits(
+            num_nodes, seed=self.split_seed
+        )
+
+        device = data.x.device
+        data.train_mask = train_masks.to(device)
+        data.val_mask   = val_masks.to(device)
+        data.test_mask  = test_masks.to(device)
+
         data.split_seed = self.split_seed
-        
-        # Apply pre_transform if specified
         data = data if self.pre_transform is None else self.pre_transform(data)
-        
-        # Save the processed data
         self.save([data], self.processed_paths[0])
         print(f"Splits saved to {self.processed_paths[0]}")
 
@@ -224,7 +211,7 @@ class Amazon(InMemoryDataset):
             'num_splits': 10,
             'num_nodes': data.x.size(0),
             'num_features': data.x.size(1),
-            'num_classes': int(data.y.max().item()) + 1,
+            'num_classes': data.y.unique().numel(),
             'split_stats': []
         }
         
@@ -372,37 +359,33 @@ class CitationFull(InMemoryDataset):
         Returns:
             tuple: (train_masks, val_masks, test_masks) each of shape [num_nodes, num_splits]
         """
-        # Set random seed for reproducibility
-        torch.manual_seed(seed)
-        np.random.seed(seed)
-        
-        train_masks = torch.zeros(num_nodes, num_splits, dtype=torch.bool)
-        val_masks = torch.zeros(num_nodes, num_splits, dtype=torch.bool)
-        test_masks = torch.zeros(num_nodes, num_splits, dtype=torch.bool)
-        
-        # Standard split ratios: 60% train, 20% val, 20% test
-        train_ratio = 0.6
-        val_ratio = 0.2
-        
-        for split_idx in range(num_splits):
-            # Create random permutation for this split with different seed per split
-            # This ensures different splits while maintaining reproducibility
-            torch.manual_seed(seed + split_idx)
-            perm = torch.randperm(num_nodes)
-            
-            train_end = int(train_ratio * num_nodes)
-            val_end = int((train_ratio + val_ratio) * num_nodes)
-            
-            train_idx = perm[:train_end]
-            val_idx = perm[train_end:val_end]
-            test_idx = perm[val_end:]
-            
-            train_masks[train_idx, split_idx] = True
-            val_masks[val_idx, split_idx] = True
-            test_masks[test_idx, split_idx] = True
-        
-        # Reset random state to avoid affecting other operations
-        torch.manual_seed(torch.initial_seed())
+        with torch.random.fork_rng():
+            torch.manual_seed(seed)
+
+            train_masks = torch.zeros(num_nodes, num_splits, dtype=torch.bool)
+            val_masks = torch.zeros(num_nodes, num_splits, dtype=torch.bool)
+            test_masks = torch.zeros(num_nodes, num_splits, dtype=torch.bool)
+
+            # Standard split ratios: 60% train, 20% val, 20% test
+            train_ratio = 0.6
+            val_ratio = 0.2
+
+            for split_idx in range(num_splits):
+                # Create random permutation for this split with different seed per split
+                # This ensures different splits while maintaining reproducibility
+                torch.manual_seed(seed + split_idx)
+                perm = torch.randperm(num_nodes)
+
+                train_end = int(train_ratio * num_nodes)
+                val_end = int((train_ratio + val_ratio) * num_nodes)
+
+                train_idx = perm[:train_end]
+                val_idx = perm[train_end:val_end]
+                test_idx = perm[val_end:]
+
+                train_masks[train_idx, split_idx] = True
+                val_masks[val_idx, split_idx] = True
+                test_masks[test_idx, split_idx] = True
             
         return train_masks, val_masks, test_masks
 
@@ -411,28 +394,23 @@ class CitationFull(InMemoryDataset):
         if osp.exists(self.processed_paths[0]) and not self.force_reload:
             # File exists, no need to process again
             return
-            
+
         print(f"Generating new splits with seed {self.split_seed}...")
-        
-        # Read the main data file
+
         data = read_npz(self.raw_paths[0], to_undirected=self.to_undirected)
-        
-        # Generate 10 random splits for cross-validation with fixed seed
+
         num_nodes = data.x.size(0)
-        train_masks, val_masks, test_masks = self._generate_splits(num_nodes, seed=self.split_seed)
-        
-        # Add the split masks to the data object
-        data.train_mask = train_masks
-        data.val_mask = val_masks
-        data.test_mask = test_masks
-        
-        # Store the seed used for generating splits in the data object
+        train_masks, val_masks, test_masks = self._generate_splits(
+            num_nodes, seed=self.split_seed
+        )
+
+        device = data.x.device
+        data.train_mask = train_masks.to(device)
+        data.val_mask   = val_masks.to(device)
+        data.test_mask  = test_masks.to(device)
+
         data.split_seed = self.split_seed
-        
-        # Apply pre_transform if specified
         data = data if self.pre_transform is None else self.pre_transform(data)
-        
-        # Save the processed data
         self.save([data], self.processed_paths[0])
         print(f"Splits saved to {self.processed_paths[0]}")
 
@@ -469,7 +447,7 @@ class CitationFull(InMemoryDataset):
             'num_splits': 10,
             'num_nodes': data.x.size(0),
             'num_features': data.x.size(1),
-            'num_classes': int(data.y.max().item()) + 1,
+            'num_classes': data.y.unique().numel(),
             'split_stats': []
         }
         

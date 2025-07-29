@@ -4,9 +4,9 @@ import pickle
 import torch
 import torch_geometric.transforms as T
 
-from src.utils.data_creator import Amazon, CitationFull
+from utils.data_creator import Amazon, CitationFull
 from torch_geometric.data import Data, InMemoryDataset
-from torch_geometric.datasets import Actor, HeterophilousGraphDataset, WebKB, WikiCS, WikipediaNetwork
+from torch_geometric.datasets import Actor, HeterophilousGraphDataset, Planetoid, WebKB, WikiCS, WikipediaNetwork
 from typing import Optional, Callable
 
 
@@ -14,10 +14,13 @@ def data_loader(name):
     name = name.lower()
     assert name in ['computers', 'photo', 'film', 'cornell', 'texas', 'wisconsin', 'chameleon', 'squirrel', \
                     'roman-empire', 'amazon-ratings', 'minesweeper', 'tolokers', \
-                    'questions', 'cora_full', 'cora_ml', 'citeseer', 'dblp', 'pubmed', 'wikics']
+                    'questions', 'cora', 'cora_full', 'cora_ml', 'citeseer', 'dblp', 'pubmed', 'wikics']
 
     ### Undirected Graphs
-    if name in ['film']:
+    if name in ['cora', 'citeseer', 'pubmed']:
+        dataset = Planetoid(root='./data/', name=name, split='geom-gcn', transform=T.NormalizeFeatures())
+        data = dataset[0]
+    elif name in ['film']:
         dataset = Actor(root='./data/film/', transform=T.NormalizeFeatures())
         data = dataset[0]
     elif name in ['computers', 'photo']:
@@ -41,11 +44,11 @@ def data_loader(name):
         dataset = HeterophilousGraphDataset(root='./data/', name=name, transform=T.NormalizeFeatures())
         data = dataset[0]
     ### Directed Graphs
-    elif name in ['cora_full', 'cora_ml', 'citeseer', 'dblp', 'pubmed']:
-        if name == 'cora_full':
-            name = 'cora'
-        dataset = CitationFull(root='./data/', name=name, transform=T.NormalizeFeatures(), to_undirected=True)
-        data = dataset[0]
+    # elif name in ['cora_full', 'cora_ml', 'citeseer', 'dblp', 'pubmed']:
+    #     if name == 'cora_full':
+    #         name = 'cora'
+    #     dataset = CitationFull(root='./data/', name=name, transform=T.NormalizeFeatures(), to_undirected=True)
+    #     data = dataset[0]
     elif name == 'wikics':
         dataset = WikiCS(root='./data/wikics/', transform=T.NormalizeFeatures(), is_undirected=True)
         data = dataset[0]

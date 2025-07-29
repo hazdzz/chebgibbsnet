@@ -42,7 +42,7 @@ def get_parameters():
                         'cornell', 'texas', 'wisconsin', 'chameleon', 'squirrel', \
                         'roman-empire', 'amazon-ratings', \
                         'minesweeper', 'tolokers', 'questions', \
-                        'cora_full', 'cora_ml', 'citeseer', 'dblp', 'pubmed', \
+                        'cora', 'citeseer', 'pubmed', \
                         'wikics'], help='dataset')
     parser.add_argument('--order', type=int, default=10, help='polynomial order (default: 10)')
     parser.add_argument('--gibbs_type', type=str, default='jackson', choices=['none', 'dirichlet', \
@@ -95,7 +95,11 @@ def prepare_data(args, device, split_idx):
 
     data = data.to(device)
 
-    if args.dataset_name == 'film':
+    if args.dataset_name in ['cora', 'citeseer', 'pubmed']:
+        train_mask = data.train_mask[:, split_idx]
+        val_mask = data.val_mask[:, split_idx]
+        test_mask = data.test_mask[:, split_idx]
+    elif args.dataset_name == 'film':
         train_mask = data.train_mask[:, split_idx]
         val_mask = data.val_mask[:, split_idx]
         test_mask = data.test_mask[:, split_idx]
@@ -113,11 +117,11 @@ def prepare_data(args, device, split_idx):
         train_mask = data.train_mask[:, split_idx]
         val_mask = data.val_mask[:, split_idx]
         test_mask = data.test_mask[:, split_idx]
-    elif args.dataset_name in ['cora_full', 'cora_ml', 'citeseer', \
-        'dblp', 'pubmed']:
-        train_mask = data.train_mask[:, split_idx]
-        val_mask = data.val_mask[:, split_idx]
-        test_mask = data.test_mask[:, split_idx]
+    # elif args.dataset_name in ['cora_full', 'cora_ml', 'citeseer', \
+    #     'dblp', 'pubmed']:
+    #     train_mask = data.train_mask[:, split_idx]
+    #     val_mask = data.val_mask[:, split_idx]
+    #     test_mask = data.test_mask[:, split_idx]
     elif args.dataset_name == 'wikics':
         train_mask = data.train_mask[:, split_idx]
         val_mask = data.val_mask[:, split_idx]
